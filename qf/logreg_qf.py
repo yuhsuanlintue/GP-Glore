@@ -11,7 +11,18 @@ import pysubgroup as ps
 import statsmodels.api as sm
 from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
-LogRegStats = namedtuple("LogRegStats", ["size_sg", "beta"])
+class LogRegStats(namedtuple("LogRegStats", ["size_sg", "beta"])):
+    # pysubgroup keeps results in a heap of (quality, subgroup, stats) tuples, and GP-growth
+    # passes subgroup=None for single selectors. Two selectors with the same quality then
+    # make Python compare the stats, and comparing numpy arrays raises. Order doesn't matter
+    # on a tie, so treat all stats as equal.
+    __slots__ = ()
+
+    def __eq__(self, other):
+        return True
+
+    def __lt__(self, other):
+        return False
 
 
 def fit_logreg(X, y):
