@@ -19,7 +19,7 @@ DEPTHS = [2, 3, 4,5]
 REPEATS = 1
 K = 10
 N_MIN = 30
-TIMEOUT = 1200
+TIMEOUT = 1800 # 30mins
 OUT = RESULTS / "sec4_3_2_a.csv"
 
 FIELDS = ["dataset", "method", "depth", "repeat", "status", "seconds",
@@ -29,7 +29,7 @@ FIELDS = ["dataset", "method", "depth", "repeat", "status", "seconds",
 def run_all(datasets: list[str], methods: list[str], depths: list[int], repeats: int,
             k: int, n_min: int, timeout: float, out: Path) -> None:
     for dataset, method in product(datasets, methods):
-        timed_out = False  # once a depth times out, every deeper one would too
+        timed_out = False
         for depth in sorted(depths):
             for rep in range(repeats):
                 row = {"dataset": dataset, "method": method, "depth": depth, "repeat": rep,
@@ -42,7 +42,7 @@ def run_all(datasets: list[str], methods: list[str], depths: list[int], repeats:
                 append(row, out, FIELDS)
                 if row["status"] == "timeout":
                     timed_out = True
-                    break  # no point repeating a timeout
+                    break
 
 
 def summarize(path: Path) -> pd.DataFrame:
@@ -59,7 +59,8 @@ def summarize(path: Path) -> pd.DataFrame:
             table[f"speedup vs {col}"] = table[col] / table["GP-GLORE"]
 
     shown = table.round(2).astype(object)
-    for col in is_bound.columns:  # mark timeouts as lower bounds: ">21600"
+    for col in is_bound.columns:  
+        # mark timeouts as lower bounds: ">21600"
         shown.loc[is_bound[col].fillna(False).astype(bool), col] = (
             ">" + table.loc[is_bound[col].fillna(False).astype(bool), col].round(0).astype(int).astype(str))
     print("median seconds ('>' = timed out, speedups against those are lower bounds):")

@@ -6,9 +6,7 @@ Usage:
     ds.data, ds.x_names, ds.selectors
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -21,10 +19,10 @@ Y = "y"
 DATA_HOME = Path(__file__).resolve().parent.parent / "data"
 
 
-def _openml(name: str, version: int) -> pd.DataFrame:
+def _openml(data_id: int) -> pd.DataFrame:
     """This is generate with LLM
     Download (first time only, cached in data/) and return the full table."""
-    df = fetch_openml(name, version=version, as_frame=True, data_home=DATA_HOME).frame
+    df = fetch_openml(data_id=data_id, as_frame=True, data_home=DATA_HOME).frame
     cats = df.select_dtypes("category").columns
     df[cats] = df[cats].astype(object) 
     return df
@@ -32,28 +30,39 @@ def _openml(name: str, version: int) -> pd.DataFrame:
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    load: Callable[[], pd.DataFrame]  # returns the raw table
+    openml_id: int | None  # None = credit-g that ships with pysubgroup
     target: str  # column we predict
     positive: str  # the target value that becomes y = 1
     x_names: tuple[str, ...]  # numeric columns used as X in the logistic regression
+    drop: tuple[str, ...] = ()  # columns left out of the subgroup descriptions
 
 
 SPECS: dict[str, DatasetSpec] = {
-    "credit-g": DatasetSpec(
-        get_credit_data,  # ships with pysubgroup, nothing to download
-        "class", "bad", ("duration", "credit_amount"),
-    ),
     "adults": DatasetSpec(
-        partial(_openml, "adult", 2),
-        "class", ">50K", ("age", "hours-per-week"),
+        1590,
+        "class", ">50K", ("age", "education-num", "hours-per-week", "capital-gain"),
+        drop=("education",),  # same information as education-num (see note.md)
+    ),
+    "credit-g": DatasetSpec(
+        None,  # ships with pysubgroup
+        "class", "bad", ("duration", "credit_amount", "age", "installment_commitment"),
+    ),
+    "credit-a": DatasetSpec(
+        29,
+        "class", "+", ("A2", "A3", "A8", "A11"),
+    ),
+    "heart-h": DatasetSpec(
+        51,
+        "num", ">50_1", ("age", "trestbps", "chol", "thalach"),
     ),
     "diabetes": DatasetSpec(
-        partial(_openml, "diabetes", 1),
-        "class", "tested_positive", ("plas", "mass"),
+        37,
+        "class", "tested_positive", ("plas", "mass", "age", "pedi"),
     ),
-    "spambase": DatasetSpec(
-        partial(_openml, "spambase", 1),
-        "class", "1", ("char_freq_%21", "capital_run_length_average"),
+    "breast-w": DatasetSpec(
+        15,
+        "Class", "malignant",
+        ("Clump_Thickness", "Cell_Size_Uniformity", "Marginal_Adhesion", "Bland_Chromatin"),
     ),
 }
 
@@ -82,13 +91,18 @@ def load_dataset(name: str, frac: float = 1.0, seed: int = 0) -> Dataset:
     get subsample with frac < 1.
     """
     spec = SPECS[name]
-    df = _decode_bytes(spec.load())
+    df = get_credit_data() if spec.openml_id is None else _openml(spec.openml_id)
+    df = _decode_bytes(df)
 
     df[Y] = (df.pop(spec.target) == spec.positive).astype(int)
     x_names = list(spec.x_names)
-    df = df.dropna(subset=x_names).reset_index(drop=True)
+    df = df.drop(columns=list(spec.drop)).dropna(subset=x_names).reset_index(drop=True)
 
-    # every other column is used for subgroup descriptions; numbers get 5 equal-frequency bins
+    # standardization
+    X = df[x_names].astype(float)
+    df[x_names] = (X - X.mean()) / X.std()
+
+    # see note.md
     selectors = ps.create_selectors(df, nbins=5, ignore=[Y, *x_names])
 
     if frac < 1.0:
