@@ -61,6 +61,10 @@ def run_one(dataset: str, method: str, depth: int, k: int, n_min: int, timeout: 
 def append(row: dict, out: Path, fields: list[str]) -> None:
     """Add one row to the CSV right away, so a crash or Ctrl+C keeps the finished runs."""
     out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        header = out.open().readline().strip().split(",")
+        if header != fields:  # appending would misalign the columns
+            raise ValueError(f"{out} has columns {header}, expected {fields}; delete or rename it")
     pd.DataFrame([row], columns=fields).to_csv(out, mode="a", header=not out.exists(), index=False)
-    print(f"{row['dataset']:10} {row['method']:11} depth={row['depth']} rep={row['repeat']} "
-          f"{row['status']:17} {row.get('seconds', float('nan')):.2f}s")
+    print(f"{row.get('dataset', ''):10} {row['method']:11} depth={row['depth']} rep={row['repeat']} "
+          f"{row.get('status', ''):17} {row.get('seconds', float('nan')):.2f}s")

@@ -86,16 +86,17 @@ def _decode_bytes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_dataset(name: str, frac: float = 1.0, seed: int = 0) -> Dataset:
+def load_dataset(name: str, frac: float = 1.0, seed: int = 0,
+                 x_names: tuple[str, ...] | None = None) -> Dataset:
     """Load a dataset and turn the target into a 0/1 column `y`.
-    get subsample with frac < 1.
+    get subsample with frac < 1. x_names overrides the spec's X (used by 4.3.2 b).
     """
     spec = SPECS[name]
     df = get_credit_data() if spec.openml_id is None else _openml(spec.openml_id)
     df = _decode_bytes(df)
 
     df[Y] = (df.pop(spec.target) == spec.positive).astype(int)
-    x_names = list(spec.x_names)
+    x_names = list(x_names or spec.x_names)
     df = df.drop(columns=list(spec.drop)).dropna(subset=x_names).reset_index(drop=True)
 
     # standardization
